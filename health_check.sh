@@ -16,6 +16,13 @@ CPU_LOAD_THRESHOLD=1
 MEMORY_THRESHOLD=80
 DISK_THRESHOLD=80
 OVERALL_STATUS=0
+set_status() {
+    local new_status="$1"
+
+    if (( new_status > OVERALL_STATUS )); then
+        OVERALL_STATUS="$new_status"
+    fi
+}
 
 mkdir -p "$REPORT_DIR" || {
     echo "ERROR: Cannot create report directory: $REPORT_DIR" >&2
@@ -34,7 +41,7 @@ echo
 
 # System uptime
 echo "----- SYSTEM UPTIME -----"
-uptime || OVERALL_STATUS=1
+uptime || set_status 1
 echo
 
 # CPU load check
@@ -52,13 +59,13 @@ if [[ "$CPU_COUNT" =~ ^[1-9][0-9]*$ ]] &&
         -v threshold="$CPU_LOAD_THRESHOLD" \
         'BEGIN { exit !(load > cores * threshold) }'; then
         echo "WARNING: Load exceeds the configured threshold"
-        OVERALL_STATUS=1
+        set_status 1
     else
         echo "OK: System load is within the basic threshold"
     fi
 else
     echo "ERROR: Unable to read CPU load information"
-    OVERALL_STATUS=1
+    set_status 1
 fi
 echo
 
@@ -66,7 +73,7 @@ echo
 echo "----- CPU INFORMATION -----"
 if ! lscpu | grep -E '^CPU\(s\):|^Model name:'; then
     echo "WARNING: CPU details could not be read"
-    OVERALL_STATUS=1
+    set_status 1
 fi
 echo
 
@@ -91,13 +98,13 @@ if [[ "$TOTAL_MEM" =~ ^[0-9]+$ ]] &&
 
     if (( MEMORY_USAGE >= MEMORY_THRESHOLD )); then
         echo "WARNING: Memory usage is ${MEMORY_USAGE}%"
-        OVERALL_STATUS=1
+        set_status 1
     else
         echo "OK: Memory usage is ${MEMORY_USAGE}%"
     fi
 else
     echo "ERROR: Unable to calculate memory usage"
-    OVERALL_STATUS=1
+    set_status 1
 fi
 echo
 
@@ -106,18 +113,27 @@ echo "----- DISK USAGE -----"
 
 if ! df -hP -x tmpfs -x devtmpfs -x squashfs -x iso9660; then
     echo "ERROR: Unable to read disk usage"
-    OVERALL_STATUS=1
+    set_status 1
 fi
 echo
 
+
+
+
+# Disk health check with severity levels
 echo "----- DISK HEALTH CHECK -----"
 
 while read -r MOUNT USAGE; do
     [[ "$USAGE" =~ ^[0-9]+$ ]] || continue
 
-    if (( USAGE >= DISK_THRESHOLD )); then
+    if (( USAGE >= 95 )); then
+        echo "CRITICAL: $MOUNT disk usage is ${USAGE}%"
+        set_status 2
+    elif (( USAGE >= DISK_THRESHOLD )); then
         echo "WARNING: $MOUNT disk usage is ${USAGE}%"
-        OVERALL_STATUS=1
+      
+            set_status 1
+        
     else
         echo "OK: $MOUNT disk usage is ${USAGE}%"
     fi
@@ -131,6 +147,7 @@ done < <(
 )
 echo
 
+
 # SSH service check
 echo "----- SSH SERVICE CHECK -----"
 
@@ -139,11 +156,11 @@ if command -v systemctl >/dev/null 2>&1; then
         echo "OK: SSH service is active"
     else
         echo "WARNING: SSH service is not active"
-        OVERALL_STATUS=1
+        set_status 1
     fi
 else
     echo "ERROR: systemctl is unavailable"
-    OVERALL_STATUS=1
+    set_status 1
 fi
 echo
 
@@ -155,7 +172,7 @@ if command -v ping >/dev/null 2>&1 &&
     echo "OK: IPv4 connectivity check passed"
 else
     echo "WARNING: IPv4 connectivity check failed"
-    OVERALL_STATUS=1
+    set_status 1
 fi
 echo
 
@@ -167,7 +184,7 @@ if command -v getent >/dev/null 2>&1 &&
     echo "OK: DNS resolution succeeded"
 else
     echo "WARNING: DNS resolution failed"
-    OVERALL_STATUS=1
+    set_status 1
 fi
 echo
 
@@ -176,7 +193,7 @@ echo "----- NETWORK INTERFACES -----"
 
 if ! ip -br addr; then
     echo "ERROR: Unable to read network interfaces"
-    OVERALL_STATUS=1
+    set_status 1
 fi
 echo
 
@@ -185,20 +202,30 @@ echo "----- LISTENING PORTS -----"
 
 if ! ss -tuln; then
     echo "ERROR: Unable to inspect listening ports"
-    OVERALL_STATUS=1
+    set_status 1
 fi
 echo
 
-# Overall summary
+# Overall health summary
 echo "======================================"
 echo "           HEALTH SUMMARY"
 echo "======================================"
 
-if (( OVERALL_STATUS == 0 )); then
-    echo "Overall: OK"
-else
-    echo "Overall: WARNING / ERROR"
-fi
+case "$OVERALL_STATUS" in
+    0)
+        echo "Overall: OK"
+        ;;
+    1)
+        echo "Overall: WARNING"
+        ;;
+    2)
+        echo "Overall: CRITICAL"
+        ;;
+    *)
+        echo "Overall: ERROR"
+        OVERALL_STATUS=3
+        ;;
+esac
 
 echo "Report: $REPORT_FILE"
 echo "======================================"
