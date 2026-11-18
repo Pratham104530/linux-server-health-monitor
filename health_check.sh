@@ -127,9 +127,9 @@ if [[ "$CPU_COUNT" =~ ^[1-9][0-9]*$ ]] &&
     echo "CPU cores: $CPU_COUNT"
     echo "1-minute load: $LOAD_1MIN"
 
-    if awk -v load="$LOAD_1MIN" -v cores="$CPU_COUNT" \
+    if awk -v system_load="$LOAD_1MIN" -v cores="$CPU_COUNT" \
         -v threshold="$CPU_LOAD_THRESHOLD" \
-        'BEGIN { exit !(load > cores * threshold) }'; then
+        'BEGIN { exit !(system_load > cores * threshold) }'; then
         echo "WARNING: Load exceeds the configured threshold"
         set_status 1
     else
@@ -267,7 +267,9 @@ echo
 # SSH service check
 echo "----- SSH SERVICE CHECK -----"
 
-if command -v systemctl >/dev/null 2>&1; then
+if [[ -f /.dockerenv ]]; then
+    echo "INFO: SSH service check skipped inside Docker container"
+elif command -v systemctl >/dev/null 2>&1; then
     if systemctl is-active --quiet ssh; then
         echo "OK: SSH service is active"
     else
