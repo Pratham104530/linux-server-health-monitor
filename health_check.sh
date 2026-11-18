@@ -12,6 +12,7 @@ source "$PROJECT_DIR/lib/memory_health.sh"
 source "$PROJECT_DIR/lib/process_health.sh"
 source "$PROJECT_DIR/lib/disk_health.sh"
 source "$PROJECT_DIR/lib/logging.sh"
+source "$PROJECT_DIR/lib/alerting.sh"
 source "$PROJECT_DIR/lib/swap_health.sh"
 source "$PROJECT_DIR/lib/system_diagnostics.sh"
 
@@ -254,7 +255,7 @@ else
     esac
 fi
 
-echo
+
 
 # Disk-space and inode health checks
 check_disk_health
@@ -351,6 +352,16 @@ case "$OVERALL_STATUS" in
     *)
         echo "Overall: ERROR"
         OVERALL_STATUS=3
+        ;;
+esac
+
+# Generate alerts for warning and critical conditions.
+case "$OVERALL_STATUS" in
+    1)
+        send_alert WARNING "Monitoring detected warning conditions. Report: $REPORT_FILE"
+        ;;
+    2)
+        send_alert CRITICAL "Monitoring detected critical conditions. Report: $REPORT_FILE"
         ;;
 esac
 
