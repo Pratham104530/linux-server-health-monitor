@@ -1,4 +1,3 @@
-
 #!/bin/bash
 
 # Linux Server Health Monitor
@@ -8,13 +7,44 @@
 set -o pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$PROJECT_DIR/lib/cpu_health.sh"
+source "$PROJECT_DIR/lib/memory_health.sh"
+source "$PROJECT_DIR/lib/process_health.sh"
+source "$PROJECT_DIR/lib/disk_health.sh"
+source "$PROJECT_DIR/lib/logging.sh"
+source "$PROJECT_DIR/lib/swap_health.sh"
+source "$PROJECT_DIR/lib/system_diagnostics.sh"
+
+set -o pipefail
+write_log INFO "Monitoring system started"
+
+# Load monitoring configuration
+CONFIG_FILE="$PROJECT_DIR/config/monitor.conf"
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "ERROR: Configuration file not found: $CONFIG_FILE" >&2
+    exit 1
+fi
+
+# shellcheck source=config/monitor.conf
+source "$CONFIG_FILE"
+
+# Load configuration validation module
+source "$PROJECT_DIR/lib/config_validation.sh"
+
+# Validate configuration before starting monitoring
+if ! validate_monitor_config; then
+    write_log ERROR "Invalid monitoring configuration"
+    echo "ERROR: Invalid monitoring configuration. Exiting." >&2
+    exit 1
+fi
+
 REPORT_DIR="$PROJECT_DIR/reports"
 TIMESTAMP="$(date '+%Y-%m-%d_%H-%M-%S')"
 REPORT_FILE="$REPORT_DIR/health_report_$TIMESTAMP.txt"
 
-CPU_LOAD_THRESHOLD=1
-MEMORY_THRESHOLD=80
-DISK_THRESHOLD=80
+
+
 OVERALL_STATUS=0
 set_status() {
     local new_status="$1"
@@ -23,7 +53,48 @@ set_status() {
         OVERALL_STATUS="$new_status"
     fi
 }
+get_cpu_usage() {
+    local total1 idle1 total2 idle2
 
+    read -r total1 idle1 < <(
+        awk '/^cpu / {
+            idle = $5 + $6
+            total = 0
+
+            for (i = 2; i <= 9; i++)
+                total += $i
+
+            print total, idle
+        }' /proc/stat
+    )
+
+    sleep 1
+
+    read -r total2 idle2 < <(
+        awk '/^cpu / {
+            idle = $5 + $6
+            total = 0
+
+            for (i = 2; i <= 9; i++)
+                total += $i
+
+            print total, idle
+        }' /proc/stat
+    )
+
+    awk -v t1="$total1" -v i1="$idle1" \
+        -v t2="$total2" -v i2="$idle2" '
+        BEGIN {
+            total_diff = t2 - t1
+            idle_diff = i2 - i1
+
+            if (total_diff <= 0 || idle_diff < 0)
+                exit 1
+
+            printf "%.2f", (total_diff - idle_diff) / total_diff * 100
+        }
+    '
+}
 mkdir -p "$REPORT_DIR" || {
     echo "ERROR: Cannot create report directory: $REPORT_DIR" >&2
     exit 2
@@ -69,12 +140,42 @@ else
 fi
 echo
 
-# CPU information
-echo "----- CPU INFORMATION -----"
-if ! lscpu | grep -E '^CPU\(s\):|^Model name:'; then
-    echo "WARNING: CPU details could not be read"
+# Actual CPU utilization check
+echo "----- CPU UTILIZATION HEALTH CHECK -----"
+
+if CPU_USAGE="$(get_cpu_usage)" &&
+   [[ "$CPU_USAGE" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+
+    echo "CPU utilization: ${CPU_USAGE}%"
+
+    CPU_STATUS="$(classify_cpu_usage \
+        "$CPU_USAGE" \
+        "$CPU_WARNING_THRESHOLD" \
+        "$CPU_CRITICAL_THRESHOLD")"
+
+    case "$CPU_STATUS" in
+        OK)
+            echo "OK: CPU utilization is within normal limits"
+            ;;
+        WARNING)
+            echo "WARNING: CPU utilization is elevated"
+            set_status 1
+            ;;
+        CRITICAL)
+            echo "CRITICAL: CPU utilization is high"
+            set_status 2
+            ;;
+        *)
+            echo "ERROR: Unable to classify CPU utilization"
+            set_status 1
+            ;;
+    esac
+
+else
+    echo "ERROR: Unable to calculate CPU utilization"
     set_status 1
 fi
+
 echo
 
 # Memory check
@@ -82,71 +183,85 @@ echo "----- MEMORY USAGE -----"
 free -h
 echo
 
+# Memory health check
 echo "----- MEMORY HEALTH CHECK -----"
 
-TOTAL_MEM="$(free -b | awk '/^Mem:/ {print $2}')"
-AVAILABLE_MEM="$(free -b | awk '/^Mem:/ {print $7}')"
+if MEMORY_USAGE="$(get_memory_usage)" &&
+   [[ "$MEMORY_USAGE" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
 
-if [[ "$TOTAL_MEM" =~ ^[0-9]+$ ]] &&
-   [[ "$AVAILABLE_MEM" =~ ^[0-9]+$ ]] &&
-   (( TOTAL_MEM > 0 && AVAILABLE_MEM <= TOTAL_MEM )); then
+    echo "Memory utilization: ${MEMORY_USAGE}%"
 
-    USED_MEM=$((TOTAL_MEM - AVAILABLE_MEM))
-    MEMORY_USAGE=$((USED_MEM * 100 / TOTAL_MEM))
+    MEMORY_STATUS="$(classify_memory_usage \
+        "$MEMORY_USAGE" \
+        "$MEMORY_WARNING_THRESHOLD" \
+        "$MEMORY_CRITICAL_THRESHOLD")"
 
-    echo "Memory usage: ${MEMORY_USAGE}%"
+    case "$MEMORY_STATUS" in
+        OK)
+            echo "OK: Memory usage is within normal limits"
+            ;;
+        WARNING)
+            echo "WARNING: Memory usage is elevated"
+            set_status 1
+            ;;
+        CRITICAL)
+            echo "CRITICAL: Memory usage is high"
+            set_status 2
+            ;;
+        *)
+            echo "ERROR: Unable to classify memory usage"
+            set_status 1
+            ;;
+    esac
 
-    if (( MEMORY_USAGE >= MEMORY_THRESHOLD )); then
-        echo "WARNING: Memory usage is ${MEMORY_USAGE}%"
-        set_status 1
-    else
-        echo "OK: Memory usage is ${MEMORY_USAGE}%"
-    fi
 else
     echo "ERROR: Unable to calculate memory usage"
     set_status 1
 fi
+
 echo
 
-# Disk check
-echo "----- DISK USAGE -----"
+# Swap health check
+echo "----- SWAP HEALTH CHECK -----"
 
-if ! df -hP -x tmpfs -x devtmpfs -x squashfs -x iso9660; then
-    echo "ERROR: Unable to read disk usage"
+if ! SWAP_USAGE="$(get_swap_usage)"; then
+    echo "ERROR: Unable to calculate swap usage"
     set_status 1
-fi
-echo
+else
+    echo "Swap utilization: ${SWAP_USAGE}%"
 
+    SWAP_STATUS="$(classify_swap_usage \
+        "$SWAP_USAGE" \
+        "$SWAP_WARNING_THRESHOLD" \
+        "$SWAP_CRITICAL_THRESHOLD")"
 
-
-
-# Disk health check with severity levels
-echo "----- DISK HEALTH CHECK -----"
-
-while read -r MOUNT USAGE; do
-    [[ "$USAGE" =~ ^[0-9]+$ ]] || continue
-
-    if (( USAGE >= 95 )); then
-        echo "CRITICAL: $MOUNT disk usage is ${USAGE}%"
-        set_status 2
-    elif (( USAGE >= DISK_THRESHOLD )); then
-        echo "WARNING: $MOUNT disk usage is ${USAGE}%"
-      
+    case "$SWAP_STATUS" in
+        OK)
+            echo "OK: Swap usage is within normal limits"
+            ;;
+        WARNING)
+            echo "WARNING: Swap usage is elevated"
             set_status 1
-        
-    else
-        echo "OK: $MOUNT disk usage is ${USAGE}%"
-    fi
-done < <(
-    df -hP -x tmpfs -x devtmpfs -x squashfs -x iso9660 |
-    awk 'NR > 1 {
-        usage = $5
-        gsub(/%/, "", usage)
-        print $6, usage
-    }'
-)
+            ;;
+        CRITICAL)
+            echo "CRITICAL: Swap usage is critically high"
+            set_status 2
+            ;;
+        *)
+            echo "ERROR: Unable to classify swap usage"
+            set_status 1
+            ;;
+    esac
+fi
+
 echo
 
+# Disk-space and inode health checks
+check_disk_health
+echo
+
+check_inode_health
+echo
 
 # SSH service check
 echo "----- SSH SERVICE CHECK -----"
@@ -206,6 +321,18 @@ if ! ss -tuln; then
 fi
 echo
 
+# Top process monitoring
+show_top_cpu_processes
+
+show_top_memory_processes
+
+# System and network diagnostics
+check_failed_ssh_logins
+
+show_system_errors
+
+show_network_diagnostics
+
 # Overall health summary
 echo "======================================"
 echo "           HEALTH SUMMARY"
@@ -231,5 +358,21 @@ echo "Report: $REPORT_FILE"
 echo "======================================"
 echo "       HEALTH CHECK COMPLETE"
 echo "======================================"
+
+# Record final monitoring status in the log
+case "$OVERALL_STATUS" in
+    0)
+        write_log INFO "Monitoring completed: Overall status OK"
+        ;;
+    1)
+        write_log WARNING "Monitoring completed: Overall status WARNING"
+        ;;
+    2)
+        write_log CRITICAL "Monitoring completed: Overall status CRITICAL"
+        ;;
+    *)
+        write_log ERROR "Monitoring completed: Overall status ERROR"
+        ;;
+esac
 
 exit "$OVERALL_STATUS"
