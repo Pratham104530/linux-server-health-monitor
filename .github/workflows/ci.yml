@@ -1,0 +1,36 @@
+
+name: Linux Server Health Monitor CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Bash Validation and Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats shellcheck
+
+      - name: Bash syntax check
+        run: |
+          for file in health_check.sh run_monitor.sh cleanup.sh lib/*.sh; do
+            bash -n "$file"
+          done
+
+      - name: ShellCheck
+        run: |
+          shellcheck -x health_check.sh run_monitor.sh cleanup.sh lib/*.sh
+
+      - name: Run Bats tests
+        run: bats tests/
+
