@@ -1,8 +1,8 @@
 # Linux Server Health Monitor
 
-A modular Linux server monitoring tool built using Bash scripting. It monitors system resources, checks essential services and network connectivity, generates health reports, records logs, and sends warning or critical alerts.
+A modular Linux server monitoring tool built using Bash scripting. It monitors system resources, checks essential services and network connectivity, generates health reports, records logs, and raises warning or critical alerts.
 
-The project also includes scheduled execution, automated cleanup, Docker containerization, automated testing, GitHub Actions CI, and Prometheus-based system metrics monitoring.
+The project also includes scheduled execution, automated cleanup, Docker containerization, automated testing, GitHub Actions CI, and a Prometheus + Node Exporter + Grafana monitoring stack.
 
 ## Features
 
@@ -22,8 +22,10 @@ The project also includes scheduled execution, automated cleanup, Docker contain
 - Automatic report and log retention cleanup
 - Docker containerization
 - Automated Bats tests
+- ShellCheck static analysis
 - GitHub Actions CI pipeline
 - Prometheus and Node Exporter system metrics monitoring
+- Grafana dashboards and CPU/RAM alert rules
 
 ## Project Structure
 
@@ -91,6 +93,7 @@ linux-server-health-monitor/
 
 - Prometheus
 - Prometheus Node Exporter
+- Grafana
 
 ## Installation
 
@@ -184,7 +187,7 @@ The alerting module records warning and critical alerts in:
 logs/alerts.log
 ```
 
-Alerts are generated according to the overall monitoring status.
+Alerts are generated according to the overall monitoring status and configured thresholds.
 
 ## Docker Usage
 
@@ -209,11 +212,12 @@ sudo docker run --rm \
 - Reports and logs are saved on the host using volume mounts.
 - The container monitors its own environment, not the complete host system.
 - Host-only checks such as SSH service status and system journal access are skipped or unavailable inside the container.
+- The container is removed after execution because the example uses `--rm`.
 - Docker Engine must be installed before running these commands.
 
 ## Prometheus & Node Exporter Monitoring
 
-Prometheus and Node Exporter are used to collect and monitor Linux system metrics.
+Prometheus and Node Exporter collect and monitor Linux system metrics.
 
 ### Components
 
@@ -231,7 +235,7 @@ sudo apt install -y prometheus prometheus-node-exporter
 
 ### Services
 
-Check the service status:
+Check service status:
 
 ```bash
 sudo systemctl status prometheus
@@ -242,7 +246,7 @@ Both services should be active and running.
 
 ### Prometheus Configuration
 
-Prometheus configuration file:
+Configuration file:
 
 ```text
 /etc/prometheus/prometheus.yml
@@ -260,13 +264,13 @@ Prometheus uses a global scrape interval of 15 seconds in this setup.
 
 ### Access Prometheus
 
-Open the Prometheus web interface:
+Open:
 
 ```text
 http://localhost:9090
 ```
 
-Check configured monitoring targets:
+Check monitoring targets:
 
 ```text
 http://localhost:9090/targets
@@ -274,21 +278,19 @@ http://localhost:9090/targets
 
 Both Prometheus and Node Exporter targets should show as **UP**.
 
-If accessing Prometheus from Windows while it runs inside an Ubuntu VirtualBox VM, use:
+If accessing Prometheus from Windows while it runs inside an Ubuntu VM, use:
 
 ```text
 http://<UBUNTU_VM_IP>:9090
 ```
 
-Find the VM IP using:
+Find the VM IP:
 
 ```bash
 hostname -I
 ```
 
 ### PromQL Queries
-
-PromQL is the query language used by Prometheus to retrieve and calculate metrics.
 
 **CPU usage percentage:**
 
@@ -308,9 +310,66 @@ PromQL is the query language used by Prometheus to retrieve and calculate metric
 100 * (1 - (node_filesystem_avail_bytes{mountpoint="/",fstype="ext4"} / node_filesystem_size_bytes{mountpoint="/",fstype="ext4"}))
 ```
 
+## Grafana Dashboards & Alerting
+
+Grafana visualizes metrics collected by Prometheus and evaluates alert rules.
+
+### Access Grafana
+
+Open:
+
+```text
+http://localhost:3000
+```
+
+When accessing Grafana from Windows while it runs inside an Ubuntu VM:
+
+```text
+http://<UBUNTU_VM_IP>:3000
+```
+
+Find the VM IP:
+
+```bash
+hostname -I
+```
+
+Configure Prometheus as a Grafana data source using:
+
+```text
+http://localhost:9090
+```
+
+Use the VM address instead of `localhost` when Grafana and Prometheus are on different machines.
+
+### Configured alert rules
+
+The project includes Grafana alert rules for:
+
+| Alert | Metric | Condition |
+|---|---|---|
+| High CPU Usage | CPU utilization | Configured threshold |
+| High RAM Usage | Memory utilization | Above 80% |
+
+RAM alert PromQL expression:
+
+```promql
+100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))
+```
+
+The RAM alert is configured with an 80% threshold and a 1-minute pending period.
+
+Alert states can be checked under **Alerting → Alert rules** in Grafana.
+
+### Notification configuration
+
+A Grafana contact point named `Linux Alert Notifications` is configured with an email recipient.
+
+SMTP has intentionally been left unconfigured, so email delivery has not been enabled or verified. To receive email notifications, configure a valid SMTP server in Grafana and test delivery from the contact point.
+
 ## Health Status and Exit Codes
 
-The monitoring script returns an exit code based on the overall system health.
+The monitoring script returns an exit code based on overall system health.
 
 | Exit code | Status | Meaning |
 |---|---|---|
@@ -335,12 +394,10 @@ bats tests/
 Check Bash syntax:
 
 ```bash
-for file in health_check.sh run_monitor.sh cleanup.sh lib/*.sh; do
-    bash -n "$file" || exit 1
-done
+bash -n health_check.sh run_monitor.sh cleanup.sh lib/*.sh
 ```
 
-Run ShellCheck:
+Run ShellCheck, including sourced files:
 
 ```bash
 shellcheck -x health_check.sh run_monitor.sh cleanup.sh lib/*.sh
@@ -378,18 +435,16 @@ Generated reports and logs are excluded from Git using `.gitignore`.
 - Timestamped reports and centralized logging
 - CPU and memory process monitoring
 - SSH, system journal, and network diagnostics
-- Automated Bats tests
+- Automated Bats tests and ShellCheck validation
 - Scheduled monitoring using cron
 - Automatic report and log retention cleanup
 - Warning and critical alert notifications
 - GitHub Actions CI pipeline
 - Docker containerization
 - Prometheus and Node Exporter integration
-
-### Planned
-
-- Grafana dashboards and alerting
+- Grafana dashboards and CPU/RAM alert rules
 
 ## Purpose
 
-This project demonstrates practical Linux system administration, Bash scripting, automation, monitoring, troubleshooting, Docker fundamentals, CI/CD concepts, automated testing, Prometheus monitoring, and Git-based development.
+This project demonstrates practical Linux system administration, Bash scripting, automation, monitoring, troubleshooting, Docker fundamentals, CI/CD concepts, automated testing, Prometheus monitoring, Grafana alerting, and Git-based development.
+
