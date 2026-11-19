@@ -1,9 +1,8 @@
-
 # Linux Server Health Monitor
 
 A modular Linux server monitoring tool built using Bash scripting. It monitors system resources, checks essential services and network connectivity, generates health reports, records logs, and sends warning or critical alerts.
 
-The project also includes scheduled execution, automated cleanup, Docker containerization, automated testing, and a GitHub Actions CI pipeline.
+The project also includes scheduled execution, automated cleanup, Docker containerization, automated testing, GitHub Actions CI, and Prometheus-based system metrics monitoring.
 
 ## Features
 
@@ -24,6 +23,7 @@ The project also includes scheduled execution, automated cleanup, Docker contain
 - Docker containerization
 - Automated Bats tests
 - GitHub Actions CI pipeline
+- Prometheus and Node Exporter system metrics monitoring
 
 ## Project Structure
 
@@ -86,6 +86,11 @@ linux-server-health-monitor/
 - Bats for automated shell testing
 - ShellCheck for static analysis
 - Docker Engine for container execution
+
+### Monitoring tools
+
+- Prometheus
+- Prometheus Node Exporter
 
 ## Installation
 
@@ -206,7 +211,106 @@ sudo docker run --rm \
 - Host-only checks such as SSH service status and system journal access are skipped or unavailable inside the container.
 - Docker Engine must be installed before running these commands.
 
+## Prometheus & Node Exporter Monitoring
+
+Prometheus and Node Exporter are used to collect and monitor Linux system metrics.
+
+### Components
+
+- **Prometheus:** Collects and stores monitoring metrics.
+- **Node Exporter:** Exposes Linux system metrics such as CPU, memory, disk, and network usage.
+
+### Installation
+
+Install both packages on Ubuntu:
+
+```bash
+sudo apt update
+sudo apt install -y prometheus prometheus-node-exporter
+```
+
+### Services
+
+Check the service status:
+
+```bash
+sudo systemctl status prometheus
+sudo systemctl status prometheus-node-exporter
+```
+
+Both services should be active and running.
+
+### Prometheus Configuration
+
+Prometheus configuration file:
+
+```text
+/etc/prometheus/prometheus.yml
+```
+
+Node Exporter scrape target:
+
+```yaml
+- job_name: node
+  static_configs:
+    - targets: ['localhost:9100']
+```
+
+Prometheus uses a global scrape interval of 15 seconds in this setup.
+
+### Access Prometheus
+
+Open the Prometheus web interface:
+
+```text
+http://localhost:9090
+```
+
+Check configured monitoring targets:
+
+```text
+http://localhost:9090/targets
+```
+
+Both Prometheus and Node Exporter targets should show as **UP**.
+
+If accessing Prometheus from Windows while it runs inside an Ubuntu VirtualBox VM, use:
+
+```text
+http://<UBUNTU_VM_IP>:9090
+```
+
+Find the VM IP using:
+
+```bash
+hostname -I
+```
+
+### PromQL Queries
+
+PromQL is the query language used by Prometheus to retrieve and calculate metrics.
+
+**CPU usage percentage:**
+
+```promql
+100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+```
+
+**Memory usage percentage:**
+
+```promql
+100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))
+```
+
+**Root disk usage percentage:**
+
+```promql
+100 * (1 - (node_filesystem_avail_bytes{mountpoint="/",fstype="ext4"} / node_filesystem_size_bytes{mountpoint="/",fstype="ext4"}))
+```
+
 ## Health Status and Exit Codes
+
+The monitoring script returns an exit code based on the overall system health.
 
 | Exit code | Status | Meaning |
 |---|---|---|
@@ -280,12 +384,12 @@ Generated reports and logs are excluded from Git using `.gitignore`.
 - Warning and critical alert notifications
 - GitHub Actions CI pipeline
 - Docker containerization
+- Prometheus and Node Exporter integration
 
 ### Planned
 
-- Prometheus and Node Exporter integration
 - Grafana dashboards and alerting
 
 ## Purpose
 
-This project demonstrates practical Linux system administration, Bash scripting, automation, monitoring, troubleshooting, Docker fundamentals, CI/CD concepts, automated testing, and Git-based development.
+This project demonstrates practical Linux system administration, Bash scripting, automation, monitoring, troubleshooting, Docker fundamentals, CI/CD concepts, automated testing, Prometheus monitoring, and Git-based development.
