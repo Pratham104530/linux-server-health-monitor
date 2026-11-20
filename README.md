@@ -4,6 +4,10 @@ A modular Linux server monitoring tool built using Bash scripting. It monitors s
 
 The project also includes scheduled execution, automated cleanup, Docker containerization, automated testing, GitHub Actions CI, and a Prometheus + Node Exporter + Grafana monitoring stack.
 
+## 🏗️ Project Architecture
+
+For the complete monitoring architecture and component workflow, see [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## Features
 
 - CPU load and utilization monitoring
