@@ -454,7 +454,7 @@ This project demonstrates practical Linux system administration, Bash scripting,
 ![Grafana Dashboard](screenshots/Dashboard.png) 
 
 ### CPU Alert Rule
-![CPU Alert](screenshots/High CPU Usage.png)
+![CPU Alert](screenshots/cpu%20alert.png)
 
 ### RAM Alert Rule
-![RAM Alert](screenshots/High RAM Usage.png)
+![RAM Alert](screenshots/ram%20alert.png)
