@@ -448,3 +448,13 @@ Generated reports and logs are excluded from Git using `.gitignore`.
 
 This project demonstrates practical Linux system administration, Bash scripting, automation, monitoring, troubleshooting, Docker fundamentals, CI/CD concepts, automated testing, Prometheus monitoring, Grafana alerting, and Git-based development.
 
+## Grafana Monitoring Dashboard
+ 
+### System Monitoring Dashboard
+![Grafana Dashboard](screenshots/Dashboard.png) 
+
+### CPU Alert Rule
+![CPU Alert](screenshots/High CPU Usage.png)
+
+### RAM Alert Rule
+![RAM Alert](screenshots/High RAM Usage.png)
